@@ -11,9 +11,6 @@ const char *error_404_form = "The requested file was not found on this server.\n
 const char *error_500_title = "Internal Error";
 const char *error_500_form = "There was an unusual problem serving the requested file.\n";
 
-/* 网站的根目录 */
-const char *doc_root = "/home/jin/MyTinyWebServer/resources";
-
 /* 对文件描述符设置非阻塞 */
 int setnonblocking(int fd)
 {
@@ -23,12 +20,12 @@ int setnonblocking(int fd)
     return old_option;
 }
 
-/* 向内核事件表注册读事件，选择开启EPOLLONESHOT */
+/* 向内核事件表注册读事件，ET模式，选择开启EPOLLONESHOT */
 void addfd(int epollfd, int fd, bool one_shot)
 {
     epoll_event event;
     event.data.fd = fd;
-    event.events = EPOLLIN | EPOLLRDHUP;
+    event.events = EPOLLIN | EPOLLET | EPOLLRDHUP;
     // 防止一个通信被不同的线程处理
     if(one_shot) {
         event.events |= EPOLLONESHOT;
@@ -52,7 +49,7 @@ void modfd(int epollfd, int fd, int ev)
 {
     epoll_event event;
     event.data.fd = fd;
-    event.events = ev | EPOLLONESHOT | EPOLLRDHUP;
+    event.events = ev | EPOLLET | EPOLLONESHOT | EPOLLRDHUP;
     epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &event);
 }
 
@@ -71,13 +68,18 @@ void http_conn::close_conn()
 }
 
 /* 初始化连接，外部调用初始化套接字地址 */
-void http_conn::init(int sockfd, const sockaddr_in &addr)
+void http_conn::init(int sockfd, const sockaddr_in &addr, char *root, int close_log)
 {
     m_sockfd = sockfd;
     m_address = addr;
 
     addfd(m_epollfd, sockfd, true);
     m_user_count++;
+
+    // 当服务器出现连接重置时，可能时网站根目录出错或者HTTP响应格式出错或者访问的文件内容完全为空
+    doc_root = root;
+    m_close_log = close_log;
+
     init();
 }
 
@@ -98,6 +100,9 @@ void http_conn::init()
     m_checked_idx = 0;
     m_read_idx = 0;
     m_write_idx = 0;
+    cgi = 0;
+    timer_flag = 0;
+    improv = 0;
 
     bzero(m_read_buf, READ_BUFFER_SIZE);
     bzero(m_write_buf, WRITE_BUFFER_SIZE);
@@ -166,13 +171,13 @@ http_conn::LINE_STATUS http_conn::parse_line()
 /* 解析HTTP请求行，获得请求方法、目标url、HTTP版本号 */
 http_conn::HTTP_CODE http_conn::parse_request_line(char *text)
 {
-    // 示例：GET http://.../index.html HTTP/1.1
+    // 示例：GET http://.../judge.html HTTP/1.1
     m_url = strpbrk(text, " \t");
     if(!m_url) {
         return BAD_REQUEST;
     }
     
-    // GET\0http://.../index.html HTTP/1.1
+    // GET\0http://.../judge.html HTTP/1.1
     *m_url++ = '\0';    // 字符串结束符替换空字符
     char *method = text;
     if(strcasecmp(method, "GET") == 0) {
@@ -180,12 +185,13 @@ http_conn::HTTP_CODE http_conn::parse_request_line(char *text)
     }
     else if(strcasecmp(method, "POST") == 0) {
         m_method = POST;
+        cgi = 1;
     }
     else {
         return BAD_REQUEST;
     }
     m_url += strspn(m_url, " \t");
-    // m_url: "http://.../index.html HTTP/1.1"
+    // m_url: "http://.../judge.html HTTP/1.1"
     m_version = strpbrk(m_url, " \t");
     if(!m_version) {
         return BAD_REQUEST;
@@ -206,9 +212,13 @@ http_conn::HTTP_CODE http_conn::parse_request_line(char *text)
         m_url += 8;
         m_url = strchr(m_url, '/');
     }
-    // m_url: "/index.html\0"
+    // m_url: "/judge.html\0"
     if(!m_url || m_url[0] != '/') {
         return BAD_REQUEST;
+    }
+    // 当url为/时，显示静态页面judge.html
+    if(strlen(m_url) == 1) {
+        strcat(m_url, "judge.html");
     }
 
     m_check_state = CHECK_STATE_HEADER; // 检查状态切换成检查头
@@ -216,7 +226,6 @@ http_conn::HTTP_CODE http_conn::parse_request_line(char *text)
 }
 
 /* 解析HTTP请求的头部信息 */
-
 http_conn::HTTP_CODE http_conn::parse_headers(char *text)
 {
     // 遇到空行，表示头部信息解析完毕
@@ -269,7 +278,7 @@ http_conn::HTTP_CODE http_conn::process_read()
     HTTP_CODE ret = NO_REQUEST;
     char *text = 0;
     while(((m_check_state == CHECK_STATE_CONTENT) && (line_status == LINE_OK))
-        || ((line_status == parse_line()) == LINE_OK)) {
+        || ((line_status = parse_line()) == LINE_OK)) {
         // 获取一行信息
         text = get_line();
         m_start_line = m_checked_idx;
@@ -311,10 +320,34 @@ http_conn::HTTP_CODE http_conn::process_read()
  */
 http_conn::HTTP_CODE http_conn::do_request()
 {
-    // "/home/jin/MyTinyWebServer/resources"
+    // "/home/jin/MyTinyWebServer/root"
     strcpy(m_real_file, doc_root);
     int len = strlen(doc_root);
-    strncpy(m_real_file + len, m_url, FILENAME_LEN - len -1);
+    
+
+    const char *p = strrchr(m_url, '/');
+    /**解析请求资源m_url，'/xxx'由静态页面judge.html中的action设置
+     * '/'              GET请求，返回judge.html     访问欢迎页面
+     * '/0'             POST请求，返回register.html 注册页面
+     * '/1'             POST请求，返回login.html    登录页面
+     * '/5'             POST请求，picture.html      图片请求页面
+     * '/6'             POST请求，vedio.html        视频请求页面
+     * '/7'             POST请求，fans.html         关注页面
+     * '/2CGISQL.cgi'   POST请求，登录校验  成功跳转welcome.html,失败跳转loginErr.html
+     * '/3CGISQL.cgi'   POST请求，注册校验  成功跳转login.html，失败跳转registerErr.html
+    */
+
+    // 处理CGI
+    if(cgi == 1 && (*(p + 1) == '2' || *(p + 1) == 3)) {
+
+    }
+
+    if(*(p + 1) == '0') {
+
+    }
+    // GET请求，返回静态页面
+    else
+        strncpy(m_real_file + len, m_url, FILENAME_LEN - len -1);
 
     // 获取m_real_file文件的相关状态信息：-1失败，0成功
     if(stat(m_real_file, &m_file_stat) < 0) {
@@ -353,7 +386,8 @@ bool http_conn::write()
 {
     int temp = 0;
 
-    if(bytes_to_send == 0) {    // 待发送字节为0，响应结束
+    // 待发送字节为0，响应结束
+    if(bytes_to_send == 0) {    
         modfd(m_epollfd, m_sockfd, EPOLLIN);
         init();
         return true;
@@ -383,10 +417,10 @@ bool http_conn::write()
         }
         else {
             m_iv[0].iov_base = m_write_buf + bytes_have_send;
-            m_iv[0].iov_len = m_iv[0].iov_len - temp;
+            m_iv[0].iov_len = m_iv[0].iov_len - bytes_have_send;
         }
 
-        if(bytes_to_send < 0) {
+        if(bytes_to_send <= 0) {
             // 没有数据待发送
             unmap();
             modfd(m_epollfd, m_sockfd, EPOLLIN);
@@ -498,8 +532,8 @@ bool http_conn::process_write(HTTP_CODE ret)
         
         case FILE_REQUEST:
             add_status_line(200, ok_200_tile);
-            add_headers(m_file_stat.st_size);
             if(m_file_stat.st_size != 0) {
+                add_headers(m_file_stat.st_size);
                 m_iv[0].iov_base = m_write_buf;
                 m_iv[0].iov_len = m_write_idx;
                 m_iv[1].iov_base = m_file_address;

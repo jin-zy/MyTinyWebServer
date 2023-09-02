@@ -64,7 +64,7 @@ void WebServer::event_listen()
     address.sin_addr.s_addr = htonl(INADDR_ANY);
     address.sin_port = htons(m_port);
 
-    // 端口复用
+    // 端口复用，允许新建的连接使用time-wait状态的端口号
     int reuse = 1;
     setsockopt(m_listenfd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
     
@@ -101,7 +101,7 @@ void WebServer::event_listen()
 
 void WebServer::timer(int connfd, struct sockaddr_in client_address)
 {
-    users[connfd].init(connfd, client_address);
+    users[connfd].init(connfd, client_address, m_root, m_close_log);
 
     // 初始化client_data数据
     users_timer[connfd].address = client_address;
@@ -146,16 +146,16 @@ bool WebServer::deal_client_data()
     socklen_t client_addrlen = sizeof(client_address);
     
     // 边缘触发
-    while(1) {
+    while(true) {
         int connfd = accept(m_listenfd, (struct sockaddr*)&client_address, &client_addrlen);
         if(connfd < 0) {
             // LOG_ERROR("%s: errno is %d", "accept error", errno);
-            return false;
+            break;
         }
         if(http_conn::m_user_count >= MAX_FD) {
             utils.show_error(connfd, "Internal server busy");
             // LOG_ERROR("%s", "Internal server busy");
-            return false;
+            break;
         }
         timer(connfd, client_address);
     }
@@ -206,9 +206,9 @@ void WebServer::deal_read(int sockfd)
         if(timer) {
             adjust_timer(timer);
         }
-        else {
-            deal_timer(timer, sockfd);
-        }
+    }
+    else {
+        deal_timer(timer, sockfd);
     }
 }
 

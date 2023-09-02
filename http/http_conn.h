@@ -1,5 +1,7 @@
 /**HTTP连接处理类
- * 
+ * 客户端发出HTTP连接请求
+ * 从状态机读取数据，更新自身状态和接收数据，传给主状态机
+ * 主状态机根据从状态机状态，更新自身状态（决定响应请求还是继续读取）
  */
 
 #ifndef HTTPCONNECTION_H
@@ -78,7 +80,7 @@ public:
     ~http_conn(){}
 
 public:
-    void init(int sockfd, const sockaddr_in &addr); // 初始化新接受的连接
+    void init(int sockfd, const sockaddr_in &addr, char *root, int close_log); // 初始化新接受的连接
     void close_conn();  // 关闭连接
     void process();     // 处理客户端请求
     bool read();        // 非阻塞读 
@@ -144,9 +146,13 @@ private:
     struct stat m_file_stat;            // 目标文件的状态，可判断文件是否存在、是否为目录、是否可读，并获取文件大小等信息
     struct iovec m_iv[2];               // 采用writev执行写操作
     int m_iv_count;                     // 被写内存块的数量
-
+    
     int bytes_to_send;                  // 将要发送的数据的字节数
-    int bytes_have_send;                // 已发送的数据的字节数
+    int bytes_have_send;                // 已发送的数据的字节数  
+    int cgi;                            // 是否启用POST
+    char *m_string;                     // 存储请求头数据
+    char *doc_root;                     // 资源文件路径
+    int m_close_log;                    // 是否关闭日志
 };
 
 #endif

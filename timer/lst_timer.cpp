@@ -151,7 +151,7 @@ void Utils::addfd(int epollfd, int fd, bool one_shot)
     epoll_event event;
     event.data.fd = fd;
 
-    event.events = EPOLLIN | EPOLLRDHUP;
+    event.events = EPOLLIN | EPOLLET | EPOLLRDHUP;
 
     if(one_shot) {
         event.events |= EPOLLONESHOT;

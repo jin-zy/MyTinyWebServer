@@ -10,7 +10,7 @@ int main(int argc, char *argv[])
 
     /* 解析命令行参数，自定义配置信息 */
     int opt;
-    const char *str = "p:t:l:";
+    const char *str = "p:t:c:";
     while((opt = getopt(argc, argv, str)) != -1) {
         switch (opt)
         {
@@ -22,7 +22,7 @@ int main(int argc, char *argv[])
             thread_num = atoi(optarg);
             break;
         }
-        case 'l': {
+        case 'c': {
             close_log = atoi(optarg);
             break;
         }

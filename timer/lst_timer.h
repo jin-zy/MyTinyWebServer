@@ -1,6 +1,6 @@
 /**定时器处理非活跃连接
  * 利用alarm函数周期性地触发SIGALRM信号，信号处理函数通过管道通知主循环执行定时器链表上的定时任务
- * - 统一事件源
+ * - 统一事件源，连接资源、定时事件、超时事件封装为定时器类
  * - 基于升序链表的定时器
  * - 处理非活跃连接
 */
@@ -31,27 +31,31 @@
 
 #include "../log/log.h"
 
+// 连接资源结构体
 class util_timer;
-
 struct client_data {
-    sockaddr_in address;
-    int sockfd;
-    util_timer *timer;
+    int sockfd;             // socket文件描述符
+    sockaddr_in address;    // 客户端socket地址
+    util_timer *timer;      // 定时器
 };
 
+// 定时器类
 class util_timer {
 public:
     util_timer() : prev(NULL), next(NULL) {}
 
 public:
-    time_t expire;
+    time_t expire;                      // 超时时间 
 
-    void (* cb_func)(client_data *);
-    client_data *user_data;
-    util_timer *prev;
-    util_timer *next;
+    void (* cb_func)(client_data *);    // 回调函数
+    client_data *user_data;             // 连接资源
+    util_timer *prev;                   // 前向定时器
+    util_timer *next;                   // 后继定时器
 };
 
+
+// 定时器容器 - 带头尾结点的升序双向链表
+// 为每一个连接创建定时器，按照升序超时时间排序
 class sort_timer_lst {
 public:
     sort_timer_lst();
@@ -100,6 +104,7 @@ public:
     int m_TIMESLOT;
 };
 
+// 定时器回调函数
 void cb_func(client_data *user_data);
 
 #endif

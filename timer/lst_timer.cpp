@@ -9,6 +9,7 @@ sort_timer_lst::sort_timer_lst()
 
 sort_timer_lst::~sort_timer_lst()
 {
+    // 销毁链表
     util_timer *tmp = head;
     while(tmp) {
         head = tmp->next;
@@ -26,12 +27,14 @@ void sort_timer_lst::add_timer(util_timer *timer)
         head = tail = timer;
         return;
     }
+    // 如果新的定时器超时时间小于当前头结点，将其设置为头节点。
     if(timer->expire < head->expire) {
         timer->next = head;
         head->prev = timer;
         head = timer;
         return;
     }
+    // 否则调用私有成员，调整内部结点
     add_timer(timer, head);
 }
 
@@ -41,15 +44,20 @@ void sort_timer_lst::adjust_timer(util_timer *timer)
         return;
     }
     util_timer *tmp = timer->next;
+
+    // 定时器在链表尾部，或者调整超时时间后仍小于下一个定时器的超时时间，不用调整
     if(!tmp || (timer->expire < tmp->expire)) {
         return;
     }
+
+    // 定时器是链表头结点，取出后重新插入
     if(timer == head) {
         head = head->next;
         head->prev = NULL;
         timer->next = NULL;
         add_timer(timer, head);
     }
+    // 定时器是内部结点，取出后重新插入
     else {
         timer->prev->next = timer->next;
         timer->next->prev = timer->prev;
@@ -85,33 +93,12 @@ void sort_timer_lst::del_timer(util_timer *timer)
     delete timer;
 }
 
-void sort_timer_lst::tick()
-{
-    if(!head) {
-        return;
-    }
-
-    time_t cur = time(NULL);
-    util_timer *tmp = head;
-    while(tmp) {
-        if(cur < tmp->expire) {
-            break;
-        }
-        tmp->cb_func(tmp->user_data);
-        head = tmp->next;
-        if(head) {
-            head->prev = NULL;
-        }
-        delete tmp;
-        tmp = head;
-    }
-}
-
 void sort_timer_lst::add_timer(util_timer *timer, util_timer *lst_head)
 {
     util_timer *prev = lst_head;
     util_timer *tmp = prev->next;
 
+    // 遍历当前结点之后的链表，按超时时间找到目标定时器的位置
     while(tmp) {
         if(timer->expire < tmp->expire) {
             prev->next = timer;
@@ -123,11 +110,41 @@ void sort_timer_lst::add_timer(util_timer *timer, util_timer *lst_head)
         prev = tmp;
         tmp = tmp->next;
     }
+    // 遍历完，目标定时器放到尾结点位置
     if(!tmp) {
         prev->next = timer;
         timer->prev = prev;
         timer->next = NULL;
         tail = timer;
+    }
+}
+
+// 定时任务处理函数
+void sort_timer_lst::tick()
+{
+    if(!head) {
+        return;
+    }
+
+    // 获取当前时间
+    time_t cur = time(NULL);
+
+    // 遍历定时器链表
+    util_timer *tmp = head;
+    while(tmp) {
+        if(cur < tmp->expire) {
+            break;
+        }
+        // 当前定时器到期，调用回调函数，执行定时事件
+        tmp->cb_func(tmp->user_data);
+
+        // 将处理完的定时器从链表容器中删除，重置头结点
+        head = tmp->next;
+        if(head) {
+            head->prev = NULL;
+        }
+        delete tmp;
+        tmp = head;
     }
 }
 
@@ -202,9 +219,12 @@ int Utils::u_epollfd = 0;
 class Utils;
 void cb_func(client_data *user_data)
 {
+    // 删除非活动连接在socket上的注册事件
     epoll_ctl(Utils::u_epollfd, EPOLL_CTL_DEL, user_data->sockfd, 0);
     assert(user_data);
+    // 关闭文件描述符
     close(user_data->sockfd);
+    // 减少连接数
     http_conn::m_user_count--;
 }
 

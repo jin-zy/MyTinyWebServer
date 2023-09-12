@@ -118,11 +118,11 @@ bool http_conn::read()
     }
     int bytes_read = 0;
     
-    // ET模式读数据
     while(true) {
         // 从m_read_buf+m_read_idx索引处开始保存数据，大小是READ_BUF_SIZE-m_read-idx
         bytes_read = recv(m_sockfd, m_read_buf + m_read_idx, READ_BUFFER_SIZE - m_read_idx, 0);
         if(bytes_read == -1) {
+            // 非阻塞ET模式下，需要一次性将数据读完
             if(errno == EAGAIN || errno == EWOULDBLOCK) {   // 没有数据可读
                 break;
             }
@@ -277,6 +277,7 @@ http_conn::HTTP_CODE http_conn::process_read()
     LINE_STATUS line_status = LINE_OK;
     HTTP_CODE ret = NO_REQUEST;
     char *text = 0;
+
     while(((m_check_state == CHECK_STATE_CONTENT) && (line_status == LINE_OK))
         || ((line_status = parse_line()) == LINE_OK)) {
         // 获取一行信息
@@ -284,6 +285,7 @@ http_conn::HTTP_CODE http_conn::process_read()
         m_start_line = m_checked_idx;
         // LOG_INFO("got 1 http line: %s\n", text);
 
+        // 主状态机的三种状态转移逻辑
         switch(m_check_state) {
             case CHECK_STATE_REQUESTLINE: {
                 ret = parse_request_line(text);
@@ -565,18 +567,21 @@ bool http_conn::process_write(HTTP_CODE ret)
 /* 处理HTTP请求的入口函数，由线程池中的工作线程调用 */
 void http_conn::process()
 {
-    // 解析HTTP请求
+    // 解析HTTP请求报文
     HTTP_CODE read_ret = process_read();
+    // NO_REQUEST，表示请求不完整，需要继续接收请求数据
     if(read_ret == NO_REQUEST) {
+        // 注册并监听读事件
         modfd(m_epollfd, m_sockfd, EPOLLIN);
         return;
     }
 
-    // 生成响应
+    // 生成响应报文
     bool write_ret = process_write(read_ret);
     if(!write_ret) {
         close_conn();
     }
+    // 注册并监听写事件
     modfd(m_epollfd, m_sockfd, EPOLLOUT);
 }
 

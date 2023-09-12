@@ -194,6 +194,7 @@ bool WebServer::deal_signal(bool &timeout, bool &stop_server)
 
 void WebServer::deal_read(int sockfd)
 {
+    // 创建定时器临时变量，将该连接的定时器取出来
     util_timer *timer = users_timer[sockfd].timer;
 
     /* Proactor */
@@ -251,12 +252,12 @@ void WebServer::event_loop()
                     continue;
                 }
             }
+            // 处理异常事件。服务器端关闭连接，移除对应的定时器
             else if(events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
-                // 服务器端关闭连接，移除对应的定时器
                 util_timer *timer = users_timer[sockfd].timer;
                 deal_timer(timer, sockfd);
             }
-            // 处理信号
+            // 处理定时器信号
             else if((sockfd == m_pipefd[0]) && (events[i].events & EPOLLIN)) {
                 bool flag = deal_signal(timeout, stop_server);
                 if(false == flag) {
@@ -271,6 +272,9 @@ void WebServer::event_loop()
                 deal_write(sockfd);
             }
         }
+
+        // 处理定时器为非必须事件，收到信号并不是立马处理
+        // 完成读写事件后，再进行处理
         if(timeout) {
             utils.timer_handler();
 

@@ -37,7 +37,8 @@ public:
     static const int WRITE_BUFFER_SIZE = 1024;  // 写缓冲区的大小
 
     /* HTTP请求方法 */
-    enum METHOD {
+    // 项目中只是用 GET 和 POST
+    enum METHOD {   
         GET = 0, 
         POST, 
         HEAD, 
@@ -83,8 +84,8 @@ public:
     void init(int sockfd, const sockaddr_in &addr, char *root, int close_log); // 初始化新接受的连接
     void close_conn();  // 关闭连接
     void process();     // 处理客户端请求
-    bool read();        // 非阻塞读 
-    bool write();       // 非阻塞写
+    bool read();        // 读取客户端发来的全部数据 
+    bool write();       // 写入响应报文
     sockaddr_in *get_address()
     {
         return &m_address;
@@ -95,15 +96,17 @@ public:
 
 private:
     void init();                        // 初始化连接
-    HTTP_CODE process_read();           // 解析HTTP请求
-    bool process_write(HTTP_CODE ret);  // 填充HTTP应答
+    HTTP_CODE process_read();           // 从m_read_buf读取，解析请求报文
+    bool process_write(HTTP_CODE ret);  // 向m_write_buf写入响应报文
 
     /* 解析HTTP请求的函数组，被process_read()调用*/
     HTTP_CODE parse_request_line(char* text);
     HTTP_CODE parse_headers(char* text);
     HTTP_CODE parse_content(char* text);
     HTTP_CODE do_request();
+    
     char* get_line() { return m_read_buf + m_start_line; }
+    // 从状态机读取一行，分析是请求报文的哪一部分
     LINE_STATUS parse_line();
 
     /* 填充HTTP应答的函数组，被process_write()调用 */

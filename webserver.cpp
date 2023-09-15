@@ -38,8 +38,8 @@ void WebServer::init(int port, int thread_num, int close_log)
 void WebServer::log_write()
 {
     if (0 == m_close_log) {
-        // 初始化日志
-        // Log::get_instance()->init("./ServerLog", m_close_log, 2000, 800000, 0);
+        // 初始化日志，异步写入
+        Log::get_instance()->init("./ServerLog", m_close_log, 2000, 800000, 800);
     }
 }
 
@@ -127,7 +127,7 @@ void WebServer::adjust_timer(util_timer *timer)
     timer->expire = cur + 3 * TIMESLOT;
     utils.m_timer_lst.adjust_timer(timer);
 
-    // LOG_INFO("%s", "adjust timer once");
+    LOG_INFO("%s", "adjust timer once");
 }
 
 void WebServer::deal_timer(util_timer *timer, int sockfd)
@@ -137,7 +137,7 @@ void WebServer::deal_timer(util_timer *timer, int sockfd)
         utils.m_timer_lst.del_timer(timer);
     }
 
-    // LOG_INFO("close fd %d", users_timer[sockfd].sockfd);
+    LOG_INFO("close fd %d", users_timer[sockfd].sockfd);
 }
 
 bool WebServer::deal_client_data()
@@ -149,12 +149,12 @@ bool WebServer::deal_client_data()
     while(true) {
         int connfd = accept(m_listenfd, (struct sockaddr*)&client_address, &client_addrlen);
         if(connfd < 0) {
-            // LOG_ERROR("%s: errno is %d", "accept error", errno);
+            LOG_ERROR("%s: errno is %d", "accept error", errno);
             break;
         }
         if(http_conn::m_user_count >= MAX_FD) {
             utils.show_error(connfd, "Internal server busy");
-            // LOG_ERROR("%s", "Internal server busy");
+            LOG_ERROR("%s", "Internal server busy");
             break;
         }
         timer(connfd, client_address);
@@ -199,7 +199,7 @@ void WebServer::deal_read(int sockfd)
 
     /* Proactor */
     if(users[sockfd].read()) {
-        // LOF_INFO("deal with the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
+        LOG_INFO("deal with the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
 
         // 若监测到读事件，将该事件放入请求队列
         m_pool->append_p(users + sockfd);
@@ -219,7 +219,7 @@ void WebServer::deal_write(int sockfd)
 
     /* Proactor */
     if(users[sockfd].write()) {
-        // LOG_INFO("send data to the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
+        LOG_INFO("send data to the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
 
         if(timer) {
             adjust_timer(timer);
@@ -238,7 +238,7 @@ void WebServer::event_loop()
     while(!stop_server) {
         int number = epoll_wait(m_epollfd, events, MAX_EVENT_NUMBER, -1);
         if(number < 0 && errno != EINTR) {
-            // LOG_ERROR("%s", "epoll failure");
+            LOG_ERROR("%s", "epoll failure");
             break;
         }
 
@@ -261,7 +261,7 @@ void WebServer::event_loop()
             else if((sockfd == m_pipefd[0]) && (events[i].events & EPOLLIN)) {
                 bool flag = deal_signal(timeout, stop_server);
                 if(false == flag) {
-                    // LOG_ERROR("%s", "deal client data failure");
+                    LOG_ERROR("%s", "deal client data failure");
                 }
             }
             // 处理客户连接上接收到的数据
@@ -278,7 +278,7 @@ void WebServer::event_loop()
         if(timeout) {
             utils.timer_handler();
 
-            // LOG_INFO("%s", "timer tick");
+            LOG_INFO("%s", "timer tick");
 
             timeout = false;
         }

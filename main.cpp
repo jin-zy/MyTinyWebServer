@@ -4,9 +4,9 @@
 int main(int argc, char *argv[])
 {
     /* 默认设置 */
-    int port = 9190;        // 默认端口9190
+    int port = 9190;     // 默认端口9190
     int thread_num = 8;  // 默认线程池线程数量8
-    int close_log = 0;      // 默认开启日志
+    int close_log = 0;   // 默认开启日志
 
     /* 解析命令行参数，自定义配置信息 */
     int opt;
@@ -38,7 +38,7 @@ int main(int argc, char *argv[])
     server.init(port, thread_num, close_log);
     
     // 日志 
-    // server.log_write();  
+    server.log_write();  
     
     // 线程池
     server.thread_pool();

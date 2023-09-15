@@ -254,7 +254,7 @@ http_conn::HTTP_CODE http_conn::parse_headers(char *text)
         m_host = text;
     }
     else {
-        // LOG_INFO("oop! unknow header: %s", text);
+        LOG_INFO("oop! unknow header: %s", text);
     }
     return NO_REQUEST;
 }
@@ -283,7 +283,7 @@ http_conn::HTTP_CODE http_conn::process_read()
         // 获取一行信息
         text = get_line();
         m_start_line = m_checked_idx;
-        // LOG_INFO("got 1 http line: %s\n", text);
+        LOG_INFO("got 1 http line: %s\n", text);
 
         // 主状态机的三种状态转移逻辑
         switch(m_check_state) {
@@ -455,7 +455,7 @@ bool http_conn::add_response(const char *format, ...)
     m_write_idx += len;
     va_end(arg_list);
 
-    // LOG_INFO("request: %s", m_write_buf);
+    LOG_INFO("request: %s", m_write_buf);
     return true;
 }
 

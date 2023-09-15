@@ -28,6 +28,7 @@
 
 #include "../lock/locker.h"
 #include "../timer/lst_timer.h"
+#include "../log/log.h"
 
 class http_conn
 {
@@ -81,7 +82,8 @@ public:
     ~http_conn(){}
 
 public:
-    void init(int sockfd, const sockaddr_in &addr, char *root, int close_log); // 初始化新接受的连接
+    // 初始化新接受的连接
+    void init(int sockfd, const sockaddr_in &addr, char *root, int close_log);
     void close_conn();  // 关闭连接
     void process();     // 处理客户端请求
     bool read();        // 读取客户端发来的全部数据 

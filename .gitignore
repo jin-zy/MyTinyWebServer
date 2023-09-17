@@ -2,3 +2,5 @@
 server
 
 logs/*
+
+core*

@@ -71,7 +71,7 @@ private:
     char *m_buf;            // 输出的内容
     int m_close_log;        // 关闭日志
     locker m_mutex;         // 互斥锁
-    bool m_is_async;        // 同步标志位
+    bool m_is_async;        // 同步异步标志位
     block_queue<std::string> *m_log_queue;  // 阻塞队列
 };
 
@@ -80,7 +80,7 @@ private:
 // 宏定义提供其他程序调用的方法，日志类中的方法不会被直接调用
 #define LOG_DEBUG(format, ...) if(0 == m_close_log) { Log::get_instance()->write_log(0, format, ##__VA_ARGS__); Log::get_instance()->flush(); }
 #define LOG_INFO(format, ...) if(0 == m_close_log) { Log::get_instance()->write_log(1, format, ##__VA_ARGS__); Log::get_instance()->flush(); }
-#define LOG_WRAN(format, ...) if(0 == m_close_log) { Log::get_instance()->write_log(2, format, ##__VA_ARGS__); Log::get_instance()->flush(); }
+#define LOG_WARN(format, ...) if(0 == m_close_log) { Log::get_instance()->write_log(2, format, ##__VA_ARGS__); Log::get_instance()->flush(); }
 #define LOG_ERROR(format, ...) if(0 == m_close_log) { Log::get_instance()->write_log(3, format, ##__VA_ARGS__); Log::get_instance()->flush(); }
 
 #endif

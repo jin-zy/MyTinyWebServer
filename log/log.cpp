@@ -6,10 +6,11 @@
 
 #include "log.h"
 
+
 Log::Log()
 {
     m_count = 0;
-    m_is_async = false;
+    m_is_async = false; // 默认同步
 }
 
 Log::~Log()
@@ -17,14 +18,6 @@ Log::~Log()
     if(m_fp != NULL) {
         fclose(m_fp);
     }
-}
-
-void Log::flush(void)
-{
-    m_mutex.lock();
-    // 强制刷新写入流缓冲区       
-    fflush(m_fp);
-    m_mutex.unlock();
 }
 
 // 异步写入需要设置阻塞队列的长度，同步不需要设置
@@ -68,10 +61,11 @@ bool Log::init(const char *file_name, int close_log, int log_buf_size,
     else {
         strcpy(log_name, p + 1);
         strncpy(dir_name, file_name, p - file_name + 1);
-        snprintf(log_full_name, 255, "%d_%02d_%02d_%s", my_tm.tm_year + 1900, my_tm.tm_mon + 1, my_tm.tm_mday, file_name);
+        snprintf(log_full_name, 255, "%s%d_%02d_%02d_%s", dir_name, my_tm.tm_year + 1900, my_tm.tm_mon + 1, my_tm.tm_mday, log_name);
     }
 
     m_today = my_tm.tm_mday;
+
     m_fp = fopen(log_full_name, "a");
     if(m_fp == NULL) {
         return false;
@@ -153,7 +147,7 @@ void Log::write_log(int level, const char *format, ...)
         my_tm.tm_year + 1900, my_tm.tm_mon + 1, my_tm.tm_mday,
         my_tm.tm_hour, my_tm.tm_min, my_tm.tm_sec, now.tv_usec, s);
     // 内容格式化，返回写入的字符个数，不包括结尾的终止符
-    int m = vsnprintf(m_buf + n, m_log_buf_size - n - 1, format, valst);
+    int m = vsnprintf(m_buf + n, m_log_buf_size - 1, format, valst);
     m_buf[n + m] = '\n';
     m_buf[n + m + 1] = '\0';
     log_str = m_buf;
@@ -174,3 +168,10 @@ void Log::write_log(int level, const char *format, ...)
     va_end(valst);
 }
 
+void Log::flush(void)
+{
+    m_mutex.lock();
+    // 强制刷新写入流缓冲区       
+    fflush(m_fp);
+    m_mutex.unlock();
+}

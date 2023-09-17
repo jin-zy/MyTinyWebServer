@@ -25,10 +25,13 @@
 #include <errno.h>
 #include <assert.h>
 #include <stdarg.h>
+#include <fstream>
+#include <map>
 
 #include "../lock/locker.h"
 #include "../timer/lst_timer.h"
 #include "../log/log.h"
+#include "../CGImysql/sql_conn_pool.h"
 
 class http_conn
 {
@@ -83,7 +86,7 @@ public:
 
 public:
     // 初始化新接受的连接
-    void init(int sockfd, const sockaddr_in &addr, char *root, int close_log);
+    void init(int sockfd, const sockaddr_in &addr, char *root, int close_log, std::string user, std::string password, std::string dbname);
     void close_conn();  // 关闭连接
     void process();     // 处理客户端请求
     bool read();        // 读取客户端发来的全部数据 
@@ -92,6 +95,7 @@ public:
     {
         return &m_address;
     }
+    void init_mysql_res(Connection_pool *conn_pool);
 
     int timer_flag;
     int improv;
@@ -125,6 +129,8 @@ private:
 public:
     static int m_epollfd;       // 所有socket上的事件注册到同一个epoll内核事件中，因此设置成静态的
     static int m_user_count;    // 统计用户数量
+    MYSQL *mysql;               // 数据库连接
+    int m_state;                // 读为0，写为1
 
 private:
     int m_sockfd;                       // 该HTTP连接的socket
@@ -158,6 +164,13 @@ private:
     char *m_string;                     // 存储请求头数据
     char *doc_root;                     // 资源文件路径
     int m_close_log;                    // 是否关闭日志
+
+    char sql_user[100];                  // 数据库登录用户名
+    char sql_password[100];             // 数据库登录密码
+    char sql_dbname[100];               // 数据库名称
+    std::map<std::string, std::string> m_uers;
+
+    locker m_lock;
 };
 
 #endif

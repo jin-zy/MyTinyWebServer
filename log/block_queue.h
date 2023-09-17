@@ -88,7 +88,7 @@ public:
     bool back(T &value)
     {
         m_mutex.lock();
-        if(0 == m_sie) {
+        if(0 == m_size) {
             m_mutex.unlock();
             return false;
         }

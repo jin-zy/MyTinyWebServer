@@ -28,9 +28,14 @@ WebServer::~WebServer()
     delete m_pool;
 }
 
-void WebServer::init(int port, int thread_num, int close_log)
+void WebServer::init(int port, int thread_num, int close_log, int sql_num,
+    std::string user, std::string password, std::string dbname)
 {
     m_port = port;
+    m_user = user;
+    m_password = password;
+    m_dbname = dbname;
+    m_sql_num =  sql_num;
     m_thread_num = thread_num;
     m_close_log = close_log;
 }
@@ -39,13 +44,24 @@ void WebServer::log_write()
 {
     if (0 == m_close_log) {
         // 初始化日志，异步写入
-        Log::get_instance()->init("./ServerLog", m_close_log, 2000, 800000, 800);
+        Log::get_instance()->init("./logs/ServerLog", m_close_log, 2000, 800000, 800);
     }
+}
+
+void WebServer::sql_pool()
+{
+    // 初始化数据库连接池
+    m_conn_pool = Connection_pool::GetInstance();
+    m_conn_pool->init("localhost", m_user, m_password, m_dbname, 3306, m_sql_num, m_close_log);
+
+    // 初始化数据库读取表
+    users->init_mysql_res(m_conn_pool);
 }
 
 void WebServer::thread_pool()
 {
-    m_pool = new threadpool<http_conn>(m_thread_num);
+    // 线程池
+    m_pool = new threadpool<http_conn>( m_conn_pool, m_thread_num);
 }
 
 void WebServer::event_listen()
@@ -101,7 +117,7 @@ void WebServer::event_listen()
 
 void WebServer::timer(int connfd, struct sockaddr_in client_address)
 {
-    users[connfd].init(connfd, client_address, m_root, m_close_log);
+    users[connfd].init(connfd, client_address, m_root, m_close_log, m_user, m_password, m_dbname);
 
     // 初始化client_data数据
     users_timer[connfd].address = client_address;

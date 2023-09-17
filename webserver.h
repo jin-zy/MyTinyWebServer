@@ -23,9 +23,12 @@ public:
     WebServer();
     ~WebServer();
 
-    void init(int port, int thread_num, int close_log);
+    void init(int port, int thread_num, int close_log, int sql_num, 
+        std::string user, std::string password, std::string dbname);
 
     void thread_pool();
+    void log_write();
+    void sql_pool();
     void event_listen();
     void event_loop();
     bool deal_client_data();
@@ -35,7 +38,6 @@ public:
     void timer(int connfd, struct sockaddr_in client_address);
     void adjust_timer(util_timer *timer);
     void deal_timer(util_timer *timer, int sockfd);
-    void log_write();
 
 public:
     /* 基础连接 */
@@ -47,6 +49,13 @@ public:
 
     /* 日志 */
     int m_close_log;
+
+    /* 数据库相关 */
+    Connection_pool *m_conn_pool;
+    std::string m_user;         // 登录数据库用户名 
+    std::string m_password;     // 登录数据库密码
+    std::string m_dbname;       // 数据库名
+    int m_sql_num;              // 数据库连接数量
 
     /* 线程池 */
     int m_thread_num;               // 线程数量，默认设为8

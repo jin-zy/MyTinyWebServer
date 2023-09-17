@@ -11,6 +11,36 @@ const char *error_404_form = "The requested file was not found on this server.\n
 const char *error_500_title = "Internal Error";
 const char *error_500_form = "There was an unusual problem serving the requested file.\n";
 
+std::map<std::string, std::string> users;
+
+void http_conn::init_mysql_res(Connection_pool *conn_pool)
+{
+    // 从数据库连接池取一个连接
+    MYSQL *mysql = NULL;
+    connectionRAII mysql_conn(&mysql, conn_pool);
+
+    // 在user表中检索浏览器端输入username，password数据
+    if(mysql_query(mysql, "SELECT username, password FROM user")) {
+        LOG_ERROR("SELECT error: %s\n", mysql_error(mysql));
+    }
+
+    // 从表中检索完整的结果集
+    MYSQL_RES *result = mysql_store_result(mysql);
+
+    // 返回结果集中的列数
+    int num_fields = mysql_num_fields(result);
+
+    // 返回所有字段结构的数组
+    MYSQL_FIELD *fields = mysql_fetch_fields(result);
+
+    // 从结果集中获取下一行，将对应的用户名和密码存入map中
+    while(MYSQL_ROW row = mysql_fetch_row(result)) {
+        std::string temp1(row[0]);
+        std::string temp2(row[1]);
+        users[temp1] = temp2;
+    }
+}
+
 /* 对文件描述符设置非阻塞 */
 int setnonblocking(int fd)
 {
@@ -68,7 +98,8 @@ void http_conn::close_conn()
 }
 
 /* 初始化连接，外部调用初始化套接字地址 */
-void http_conn::init(int sockfd, const sockaddr_in &addr, char *root, int close_log)
+void http_conn::init(int sockfd, const sockaddr_in &addr, char *root, int close_log,
+    std::string user, std::string password, std::string dbname)
 {
     m_sockfd = sockfd;
     m_address = addr;
@@ -79,6 +110,10 @@ void http_conn::init(int sockfd, const sockaddr_in &addr, char *root, int close_
     // 当服务器出现连接重置时，可能时网站根目录出错或者HTTP响应格式出错或者访问的文件内容完全为空
     doc_root = root;
     m_close_log = close_log;
+
+    strcpy(sql_user, user.c_str());
+    strcpy(sql_password, password.c_str());
+    strcpy(sql_dbname, dbname.c_str());
 
     init();
 }
@@ -100,7 +135,12 @@ void http_conn::init()
     m_checked_idx = 0;
     m_read_idx = 0;
     m_write_idx = 0;
+
+
     cgi = 0;
+    mysql = NULL;
+    m_state = 0;
+
     timer_flag = 0;
     improv = 0;
 
@@ -265,7 +305,7 @@ http_conn::HTTP_CODE http_conn::parse_content(char *text)
     if(m_read_idx >= (m_content_length + m_checked_idx)) {
         text[m_content_length] = '\0';
         // POST 请求中最后为输入的用户名和密码
-        // m_string = text;
+        m_string = text;
         return GET_REQUEST;
     }
     return NO_REQUEST;
@@ -326,7 +366,6 @@ http_conn::HTTP_CODE http_conn::do_request()
     strcpy(m_real_file, doc_root);
     int len = strlen(doc_root);
     
-
     const char *p = strrchr(m_url, '/');
     /**解析请求资源m_url，'/xxx'由静态页面judge.html中的action设置
      * '/'              GET请求，返回judge.html     访问欢迎页面
@@ -340,17 +379,123 @@ http_conn::HTTP_CODE http_conn::do_request()
     */
 
     // 处理CGI
-    if(cgi == 1 && (*(p + 1) == '2' || *(p + 1) == 3)) {
+    if(cgi == 1 && (*(p + 1) == '2' || *(p + 1) == '3')) {
+        // 根据标志判断是登录检测还是注册检测
+        char flag = m_url[1];
 
+        char *m_url_real = (char *)malloc(sizeof(char) * 200);
+        strcpy(m_url_real, "/");
+        strcat(m_url_real, m_url + 2);
+        strncpy(m_real_file + len, m_url_real, FILENAME_LEN - len -1);
+        free(m_url_real);
+
+        // 将用户名和密码提取出来
+        // user = JIN，password = 123456
+        char name[100], password[100];
+        int i;
+        for(i = 5; m_string[i] != '&'; ++i) {
+            name[i - 5] = m_string[i];
+        }
+        name[i - 5] = '\0';
+
+        int j = 0;
+        for(i = i + 10; m_string[i] != '\0'; ++i, ++j) {
+            password[j] = m_string[i];
+        }
+        password[j] = '\0';
+
+        // 如果是注册检测，先检测数据库中是否有重名
+        // 没有重名的，增加数据
+        if(*(p + 1) == '3') {
+            char *sql_insert = (char *)malloc(sizeof(char) * 200);
+            strcpy(sql_insert, "INSERT INTO user(username, password) VALUES(");
+            strcat(sql_insert, "'");
+            strcat(sql_insert, name);
+            strcat(sql_insert, "', '");
+            strcat(sql_insert, password);
+            strcat(sql_insert, "')");
+
+            if(users.find(name) == users.end()) {
+                m_lock.lock();
+
+                int res = mysql_query(mysql, sql_insert);
+                users.insert(std::pair<std::string, std::string>(name, password));
+                
+                m_lock.unlock();
+
+                if(!res) {
+                    strcpy(m_url, "/login.html");
+                }
+                else {
+                    strcpy(m_url, "/registerError.html");
+                }
+            }
+            else {
+                strcpy(m_url, "/registerError.html");
+            }
+        }
+        // 如果是登录，直接判断
+        // 如果浏览器端输入的用户名和密码可查到返回1，否则返回0
+        else if(*(p + 1) == '2') {
+            if(users.find(name) != users.end() && users[name] == password) {
+                strcpy(m_url, "/welcome.html");
+            }
+            else {
+                strcpy(m_url, "/loginError.html");
+            }
+        }
     }
 
+    // POST请求，返回register.html 注册页面
     if(*(p + 1) == '0') {
+        char *m_url_real = (char *)malloc(sizeof(char) * 200);
+        strcpy(m_url_real, "/register.html");
+        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
 
+        free(m_url_real);
     }
-    // GET请求，返回静态页面
-    else
-        strncpy(m_real_file + len, m_url, FILENAME_LEN - len -1);
 
+    // POST请求，返回login.html    登录页面
+    else if(*(p + 1) == '1') {
+        char *m_url_real = (char *)malloc(sizeof(char) * 200);
+        strcpy(m_url_real, "/login.html");
+        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
+
+        free(m_url_real);
+    }
+
+    // POST请求，picture.html      图片请求页面
+    else if(*(p + 1) == '5') {
+        char *m_url_real = (char *)malloc(sizeof(char) * 200);
+        strcpy(m_url_real, "/picture.html");
+        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
+
+        free(m_url_real);
+    }
+
+    // POST请求，vedio.html        视频请求页面
+    else if(*(p + 1) == '6') {
+        char *m_url_real = (char *)malloc(sizeof(char) * 200);
+        strcpy(m_url_real, "/video.html");
+        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
+
+        free(m_url_real);
+    }
+
+    // POST请求，fans.html         关注页面
+    else if(*(p + 1) == '7') {
+        char *m_url_real = (char *)malloc(sizeof(char) * 200);
+        strcpy(m_url_real, "/fans.html");
+        strncpy(m_real_file + len, m_url_real, strlen(m_url_real));
+
+        free(m_url_real);
+    }
+
+    // GET请求，返回静态页面
+    else {
+        strncpy(m_real_file + len, m_url, FILENAME_LEN - len -1);
+    }
+    
     // 获取m_real_file文件的相关状态信息：-1失败，0成功
     if(stat(m_real_file, &m_file_stat) < 0) {
         return NO_RESOURCE;

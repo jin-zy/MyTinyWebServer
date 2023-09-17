@@ -11,12 +11,13 @@
 #include <exception>
 #include <pthread.h>
 #include "../lock/locker.h"
+#include "../CGImysql/sql_conn_pool.h"
 
 template <typename T>
 class threadpool
 {
 public:
-    threadpool(int thread_num = 8, int max_requests = 10000);
+    threadpool(Connection_pool *conn_pool, int thread_num = 8, int max_requests = 10000);
     ~threadpool();
     bool append_p(T *request);      // 向请求队列中添加任务
 
@@ -32,13 +33,14 @@ private:
     std::list<T *> m_workqueue;     // 请求队列
     locker m_queuelocker;           // 互斥锁，保护请求队列
     sem m_queuestat;                // 信号量，是否有任务需要处理
-    bool m_stop;                    // 是否结束线程
+    // bool m_stop;                 // 是否结束线程
+    Connection_pool *m_conn_pool;   // 数据库
 };
 
 /* 构造函数，创建线程并加入线程池数组m_threads[] */
 template <typename T>
-threadpool<T>::threadpool(int thread_num, int max_requests)
-    : m_thread_num(thread_num), m_max_requests(max_requests), m_threads(NULL), m_stop(false)
+threadpool<T>::threadpool(Connection_pool *conn_pool, int thread_num, int max_requests)
+    : m_conn_pool(conn_pool), m_thread_num(thread_num), m_max_requests(max_requests), m_threads(NULL)
 {
     if(thread_num <= 0 || max_requests <= 0) {
         throw std::exception();
@@ -68,7 +70,7 @@ template <typename T>
 threadpool<T>::~threadpool()
 {
     delete[] m_threads;
-    m_stop = true;
+    // m_stop = true;
 }
 
 /* 向请求队列添加入任务，操作时需要加锁，保证线程安全 */
@@ -103,7 +105,7 @@ void *threadpool<T>::worker(void *arg)
 template<typename T>
 void threadpool<T>::run()
 {
-    while(!m_stop) {
+    while(true) {
         // 信号量等待
         m_queuestat.wait();
 
@@ -120,6 +122,7 @@ void threadpool<T>::run()
         m_queuelocker.unlock();
         if(!request) continue;
         
+        connectionRAII mysql_conn(&request->mysql, m_conn_pool);
         // http类中的方法
         request->process();
     }

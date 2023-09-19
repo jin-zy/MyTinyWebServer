@@ -1,29 +1,56 @@
 # MyTinyWebServer
 
-
 ## 简介
-搭建 Linux 环境下 C++ 轻量级 Web 服务器。项目内容是对 Github 开源项目 [TinyWebServer]( https://github.com/qinguoyi/TinyWebServer) 的学习。原项目中同时实现了 epoll 的条件触发（LT）和边缘触发（ET），Reactor 事件处理模式和模拟 Proactor 事件处理模式，支持参数化自定义运行服务器，支持解析 GET 和 POST 请求。在学习过程中会先实现单模式下的服务器运行，再逐步添加不同模式和更多功能。
 
-- 使用半同步半反应堆**线程池** + **非阻塞socket** + **epoll（ET）** + **模拟Proactor**事件处理模式的并发模型
-- 使用**主从状态机**解析 HTTP 请求报文，当前暂仅支持 **GET** 请求获取静态资源
-- 经 Webbench 压力测试可以实现**上万的并发连接**数据交换
+搭建 Linux 环境下 C++ 轻量级 Web 服务器。项目内容是对 GitHub 开源项目 [TinyWebServer]( https://github.com/qinguoyi/TinyWebServer) 的研读学习。
+
+- 使用**线程池** + **非阻塞socket** + **epoll（ET）** + **模拟Proactor**事件处理模式的并发模型；
+- 使用**主从状态机**解析 HTTP 请求报文，支持 **GET** 和 **POST** 请求服务器资源；
+- 使用 MySQL 数据库实现用户**注册**、**登录**功能，可请求服务器的图片和视频文件；
+- 使用**单例模式**+**阻塞队列**实现**异步日志系统**，记录服务器的运行状态；
+- 经 Webbench 压力测试可以实现**上万的并发连接**数据交换。
 
 ## 运行
 
-1. 构建并运行
+1. 运行前确认服务器已安装 MySQL 数据库，创建相关数据库和表
+
+```mysql
+# 创建 webserv 数据库
+CREATE DATABASE webserv;
+
+# 创建 user 表
+USE webserv;
+CREATE TABLE user(
+	username char(50) NULL,
+	password char(50) NULL
+) ENGINE=InnoDB;
+
+# 添加数据
+INSERT INTO user(username, password) VALUES('name', 'password');
+```
+
+2. 修改 `main.cpp` 中的数据库初始化信息
+
+```c++
+std::string user = "name";			// 数据库登录用户名
+std::string password = "password";	// 数据库登录密码
+std::string dbname = "webserv";		// 使用的数据库名称
+```
+
+3. 构建并运行
 
 ```bash
 $ make server
 $ ./server
 ```
 
-2. 浏览器端访问
+4. 浏览器端访问
 
 ```
 http://<ip>:9190/
 ```
 
-3. 个性化运行
+5. 个性化运行
 
 ```bash
 $ ./server [-p port] [-t thread_number] [-c close_log]
@@ -71,3 +98,9 @@ $ 10500 clients, running 5 sec.
 $ Speed=344724 pages/min, 764138 bytes/sec.
 $ Requests: 28727 susceed, 0 failed.
 ```
+
+## 参考
+
+1. GitHub 开源项目 [TinyWebServer]( https://github.com/qinguoyi/TinyWebServer) ；
+2. TCP/IP 网络编程，尹圣雨 著；
+3. Linux 高性能服务器编程， 游双 著.
